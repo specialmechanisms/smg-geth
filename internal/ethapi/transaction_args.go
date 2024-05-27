@@ -420,15 +420,32 @@ func (args *TransactionArgs) CallDefaults(globalGasCap uint64, baseFee *big.Int,
 // ToMessage converts the transaction arguments to the Message type used by the
 // core evm. This method is used in calls and traces that do not require a real
 // live transaction.
-// Assumes that fields are not nil, i.e. setDefaults or CallDefaults has been called.
-func (args *TransactionArgs) ToMessage(baseFee *big.Int) *core.Message {
+func (args *TransactionArgs) ToMessage(baseFee *big.Int) (*core.Message) {
+	// Reject invalid combinations of pre- and post-1559 fee styles
+	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
+		log.Error("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")
+		return nil
+	}
+	// Set sender address or use zero address if none specified.
+	addr := args.from()
+
+	gas := uint64(math.MaxUint64 / 2)
+	if args.Gas != nil && *args.Gas > 0 {
+		gas = uint64(*args.Gas)
+	}
+
 	var (
-		gasPrice  *big.Int
-		gasFeeCap *big.Int
-		gasTipCap *big.Int
+		gasPrice   *big.Int
+		gasFeeCap  *big.Int
+		gasTipCap  *big.Int
+		blobFeeCap *big.Int
 	)
 	if baseFee == nil {
-		gasPrice = args.GasPrice.ToInt()
+		// If there's no basefee, then it must be a non-1559 execution
+		gasPrice = new(big.Int)
+		if args.GasPrice != nil {
+			gasPrice = args.GasPrice.ToInt()
+		}
 		gasFeeCap, gasTipCap = gasPrice, gasPrice
 	} else {
 		// A basefee is provided, necessitating 1559-type execution
@@ -438,8 +455,14 @@ func (args *TransactionArgs) ToMessage(baseFee *big.Int) *core.Message {
 			gasFeeCap, gasTipCap = gasPrice, gasPrice
 		} else {
 			// User specified 1559 gas fields (or none), use those
-			gasFeeCap = args.MaxFeePerGas.ToInt()
-			gasTipCap = args.MaxPriorityFeePerGas.ToInt()
+			gasFeeCap = new(big.Int)
+			if args.MaxFeePerGas != nil {
+				gasFeeCap = args.MaxFeePerGas.ToInt()
+			}
+			gasTipCap = new(big.Int)
+			if args.MaxPriorityFeePerGas != nil {
+				gasTipCap = args.MaxPriorityFeePerGas.ToInt()
+			}
 			// Backfill the legacy gasPrice for EVM execution, unless we're all zeroes
 			gasPrice = new(big.Int)
 			if gasFeeCap.BitLen() > 0 || gasTipCap.BitLen() > 0 {
@@ -447,24 +470,35 @@ func (args *TransactionArgs) ToMessage(baseFee *big.Int) *core.Message {
 			}
 		}
 	}
+	if args.BlobFeeCap != nil {
+		blobFeeCap = args.BlobFeeCap.ToInt()
+	} else if args.BlobHashes != nil {
+		blobFeeCap = new(big.Int)
+	}
+	value := new(big.Int)
+	if args.Value != nil {
+		value = args.Value.ToInt()
+	}
+	data := args.data()
 	var accessList types.AccessList
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	return &core.Message{
-		From:              args.from(),
+	msg := &core.Message{
+		From:              addr,
 		To:                args.To,
-		Value:             (*big.Int)(args.Value),
-		GasLimit:          uint64(*args.Gas),
+		Value:             value,
+		GasLimit:          gas,
 		GasPrice:          gasPrice,
 		GasFeeCap:         gasFeeCap,
 		GasTipCap:         gasTipCap,
-		Data:              args.data(),
+		Data:              data,
 		AccessList:        accessList,
-		BlobGasFeeCap:     (*big.Int)(args.BlobFeeCap),
+		BlobGasFeeCap:     blobFeeCap,
 		BlobHashes:        args.BlobHashes,
 		SkipAccountChecks: true,
 	}
+	return msg
 }
 
 // ToTransaction converts the arguments to a transaction.
