@@ -618,6 +618,26 @@ web3._extend({
 			inputFormatter: [web3._extend.formatters.inputCallFormatter, web3._extend.formatters.inputDefaultBlockNumberFormatter, null, null],
 		}),
 		new web3._extend.Method({
+			name: 'callBundle',
+			call: 'eth_callBundle',
+			params: 1,
+		}),
+		new web3._extend.Method({
+			name: 'estimateGasBundle',
+			call: 'eth_estimateGasBundle',
+			params: 1,
+		}),
+		new web3._extend.Method({
+			name: 'eth_callBundleSignedByOther',
+			call: 'eth_callBundleSignedByOther',
+			params: 2,
+		}),
+		new web3._extend.Method({
+			name: 'eth_callBundleSignedByOther',
+			call: 'eth_callBundleSignedByOther',
+			params: 2,
+		}),
+		new web3._extend.Method({
 			name: 'getBlockReceipts',
 			call: 'eth_getBlockReceipts',
 			params: 1,
