@@ -3,6 +3,7 @@ package filters
 import (
 	"encoding/json"
 	"fmt"
+	"errors"
 	"math"
 	"math/big"
 	"strings"
@@ -216,11 +217,23 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 
 		// converting to ether units
 		if token.Hex() == "0x0000000000000000000000000000000000000000" || token.Hex() == "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" {
-			metaData.Balance_token0_src = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForAdditionResponse[0].(*big.Int), 18)
-			metaData.Balance_token0_dst = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForRemovalResponse[0].(*big.Int), 18)
+			metaData.Balance_token0_src, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForAdditionResponse[0].(*big.Int), 18)
+			if err != nil {
+				return metaData, err
+			}
+			metaData.Balance_token0_dst, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForRemovalResponse[0].(*big.Int), 18)
+			if err != nil {
+				return metaData, err
+			}
 		} else {
-			metaData.Balance_token1_src = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForAdditionResponse[0].(*big.Int), token.Hex())
-			metaData.Balance_token1_dst = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForRemovalResponse[0].(*big.Int), token.Hex())
+			metaData.Balance_token1_src, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForAdditionResponse[0].(*big.Int), token.Hex())
+			if err != nil {
+				return metaData, err
+			}
+			metaData.Balance_token1_dst, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForRemovalResponse[0].(*big.Int), token.Hex())
+			if err != nil {
+				return metaData, err
+			}
 		}
 	}
 
@@ -230,7 +243,10 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 	if err != nil {
 		return metaData, err
 	}
-	metaData.ExchangeFee = ConvertWeiUnitsToEtherUnits_UsingDecimals(exchangeFeeResponse[0].(*big.Int), 18)
+	metaData.ExchangeFee, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(exchangeFeeResponse[0].(*big.Int), 18)
+	if err != nil {
+		return metaData, err
+	}
 
 	// Fetch slippage fee
 	var slippageFeeResponse []interface{}
@@ -238,7 +254,10 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 	if err != nil {
 		return metaData, err
 	}
-	metaData.ExchangeSlippageFee = ConvertWeiUnitsToEtherUnits_UsingDecimals(slippageFeeResponse[0].(*big.Int), 18)
+	metaData.ExchangeSlippageFee, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(slippageFeeResponse[0].(*big.Int), 18)
+	if err != nil {
+		return metaData, err
+	}
 
 	return metaData, nil
 }
@@ -313,7 +332,11 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 		token := addresses[i].Hex()
 		metaData.Tokens = append(metaData.Tokens, token)
 		balance_wei := balances[i]
-		balance_ether := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balance_wei, token)
+		balance_ether, err := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balance_wei, token)
+		if err != nil {
+			log.Info("GetBalanceMetaData_BalancerV2: Failed to convert balance to ether units:", "err", err)
+			return metaData, poolAddress, err
+		}
 		metaData.Balances = append(metaData.Balances, balance_ether)
 	}
 
@@ -326,7 +349,11 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 	}
 	fee_bigInt := poolFee[0].(*big.Int)
 	// divide fee_bigInt by 1e18. i just use WETH contract here because it has 18 decimals
-	metaData.Fee = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(fee_bigInt, "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
+	metaData.Fee, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(fee_bigInt, "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
+	if err != nil {
+		log.Info("GetBalanceMetaData_BalancerV2: Failed to convert fee to ether units:", "err", err)
+		return metaData, poolAddress, err
+	}
 
 	// // 3. getPoolScalingFactors
 	var poolScalingFactors []interface{}
@@ -846,13 +873,21 @@ func GetBalanceMetaData_UniswapV2(poolAddress string) ([]float64, error) {
 		fmt.Printf("Failed to assert type: %v", err)
 		return metaData, fmt.Errorf("failed to assert type: %v", err)
 	}
-	token0Reserves := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(reserves0_bigInt, token0Address[0].(common.Address).Hex())
+	token0Reserves, err := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(reserves0_bigInt, token0Address[0].(common.Address).Hex())
+	if err != nil {
+		fmt.Printf("Failed to convert to ether units: %v", err)
+		return metaData, err
+	}
 	reserves1_bigInt, ok := reserves[1].(*big.Int)
 	if !ok {
 		fmt.Printf("Failed to assert type: %v", err)
 		return metaData, fmt.Errorf("failed to assert type: %v", err)
 	}
-	token1Reserves := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(reserves1_bigInt, token1Address[0].(common.Address).Hex())
+	token1Reserves, err := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(reserves1_bigInt, token1Address[0].(common.Address).Hex())
+	if err != nil {
+		fmt.Printf("Failed to convert to ether units: %v", err)
+		return metaData, err
+	}
 
 	metaData = append(metaData, token0Reserves)
 	metaData = append(metaData, token1Reserves)
@@ -861,33 +896,66 @@ func GetBalanceMetaData_UniswapV2(poolAddress string) ([]float64, error) {
 }
 
 // HELPER FUNCTIONS
-// create a function that takes in tokemAmount as a bigInt and token address and returns the balance in ether units
-func ConvertWeiUnitsToEtherUnits_UsingTokenAddress(tokenAmount *big.Int, tokenAddress string) float64 {
+// ConvertWeiUnitsToEtherUnits_UsingTokenAddress takes in tokenAmount as a big.Int and token address,
+// and returns the balance in ether units. It now also returns an error if it cannot complete the conversion.
+func ConvertWeiUnitsToEtherUnits_UsingTokenAddress(tokenAmount *big.Int, tokenAddress string) (float64, error) {
+	// Check if tokenAmount is nil, zero, or negative
+	if tokenAmount == nil || tokenAmount.Sign() <= 0 {
+		err := errors.New("tokenAmount is nil, zero, or negative")
+		fmt.Printf("Error: %v, tokenAmount: %v", err, tokenAmount)
+		return 0, err
+	}
+
+	// Check if tokenAddress is a valid Ethereum address
+	if !common.IsHexAddress(tokenAddress) {
+		err := fmt.Errorf("invalid token address: %s", tokenAddress)
+		fmt.Printf("Error: %v, tokenAddress: %s", err, tokenAddress)
+		return 0, err
+	}
+
 	var contractAddress common.Address = common.HexToAddress(tokenAddress)
 	instance_ERC20 := bind.NewBoundContract(contractAddress, parsedABI_ERC20, client, client, client)
 
-	// get token decimals
+	// Get token decimals
 	var tokenDecimals []interface{}
 	callOpts := &bind.CallOpts{}
 	err := instance_ERC20.Call(callOpts, &tokenDecimals, "decimals")
 	if err != nil {
-		log.Error("Failed to retrieve value of variable: %v", err)
+		fmt.Printf("Failed to retrieve token decimals: %v, tokenAddress: %s", err, tokenAddress)
+		return 0, err // Return the error to the caller
 	}
 
-	// convert tokenAmount that are in wei units to ether units using the decimals
+	if len(tokenDecimals) == 0 {
+		err := fmt.Errorf("tokenDecimals is empty")
+		fmt.Printf("Error: %v, tokenAddress: %s", err, tokenAddress)
+		return 0, err // Return an error indicating tokenDecimals is empty
+	}
+
+	// Convert tokenAmount that are in wei units to ether units using the decimals
 	tokenDecimals_float64 := float64(tokenDecimals[0].(uint8))
 	tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
 	tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, new(big.Float).Mul(big.NewFloat(math.Pow(10.0, tokenDecimals_float64)), big.NewFloat(1))).Float64()
 
-	return tokenAmount_etherUnits
+	return tokenAmount_etherUnits, nil // Return nil error on success
 }
 
 // create a function that takes in tokemAmount as a bigInt and decimals as int and returns the balance in ether units
-func ConvertWeiUnitsToEtherUnits_UsingDecimals(tokenAmount *big.Int, decimals int) float64 {
+func ConvertWeiUnitsToEtherUnits_UsingDecimals(tokenAmount *big.Int, decimals int) (float64, error) {
+
+	if tokenAmount == nil || tokenAmount.Sign() <= 0 {
+		return 0, errors.New("tokenAmount is nil, zero, or negative")
+	}
+
+	// Check for valid decimals value (typically, 0 <= decimals <= 18 for Ethereum tokens)
+	if decimals < 0 || decimals > 36 {
+		return 0, fmt.Errorf("invalid decimals: %d. Decimals should be between 0 and 36", decimals)
+	}
+
+
 	// convert tokenAmount that are in wei units to ether units using the decimals
 	tokenDecimals_float64 := float64(decimals)
 	tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
 	tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, new(big.Float).Mul(big.NewFloat(math.Pow(10.0, tokenDecimals_float64)), big.NewFloat(1))).Float64()
 
-	return tokenAmount_etherUnits
+	return tokenAmount_etherUnits, nil
 }
