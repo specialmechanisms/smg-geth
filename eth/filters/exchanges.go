@@ -20,6 +20,7 @@ var client *ethclient.Client
 var parsedABI_uniswapv2 abi.ABI
 var parsedABI_ERC20 abi.ABI
 var parsedABI_uniswapv3_multicall abi.ABI
+var parsedABI_pancakeswapv3_multicall abi.ABI
 var parsedABI_uniswapv3_pool abi.ABI
 var parsedABI_balancerv2_vault abi.ABI
 var parsedABI_balancerv2_pool abi.ABI
@@ -44,6 +45,10 @@ func init() {
 		log.Error("Failed to parse contract ABI: %v", err)
 	}
 	parsedABI_uniswapv3_multicall, err = abi.JSON(strings.NewReader(ABI_UniswapV3_Multicall))
+	if err != nil {
+		log.Error("Failed to parse contract ABI: %v", err)
+	}
+	parsedABI_pancakeswapv3_multicall, err = abi.JSON(strings.NewReader(ABI_PancakeSwapV3_Multicall))
 	if err != nil {
 		log.Error("Failed to parse contract ABI: %v", err)
 	}
@@ -409,9 +414,6 @@ type ResponseStruct_UniswapV3Multicall struct {
 func GetBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3Multicall, error) {
 	var metaData ResponseStruct_UniswapV3Multicall
 
-	var multiCallAddress common.Address = common.HexToAddress("0x6560CEe7DC9C8498C3Fc81e214A99EE73E818870")
-	instance_uniswapV3_multicall := bind.NewBoundContract(multiCallAddress, parsedABI_uniswapv3_multicall, client, client, client)
-
 	// The response_factoryCall is a pointer to a common.Address that will store the address returned by the factory function of the UniswapV3 pool contract.
 	// The responseSlice is a slice of interface{} that holds a pointer to response_factoryCall, and it’s used because the Call function expects its second argument
 	//  to be a pointer to a slice of interface{}, where it will store the returned values from the contract call.
@@ -429,15 +431,33 @@ func GetBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3M
 	}
 
 	uniswapV3FactoryAddress := "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+	pancakeswapV3FactoryAddress := "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
 	poolFactoryAddress := response_factoryCall.Hex()
-	if poolFactoryAddress != uniswapV3FactoryAddress {
+
+	// Check if the poolFactoryAddress matches either Uniswap V3 or PancakeSwap V3 factory addresses
+	if poolFactoryAddress != uniswapV3FactoryAddress && poolFactoryAddress != pancakeswapV3FactoryAddress {
 		err = WrongFactoryAddressError{Address: poolAddress}
 		return metaData, err
 	}
 
+	var multiCallAddress common.Address
+	var instance_multicall *bind.BoundContract
+
+	// Depending on the factory address, set the multiCallAddress and instance accordingly
+	if poolFactoryAddress == uniswapV3FactoryAddress {
+		multiCallAddress = common.HexToAddress("0x6560CEe7DC9C8498C3Fc81e214A99EE73E818870")
+		instance_multicall = bind.NewBoundContract(multiCallAddress, parsedABI_uniswapv3_multicall, client, client, client)
+	} else if poolFactoryAddress == pancakeswapV3FactoryAddress {
+		// Assuming you have the address and ABI for PancakeSwap V3 multicall
+		multiCallAddress = common.HexToAddress("0xdF27134C742bc24e0b3a54dc7c2Fd55033C219E0")
+		instance_multicall = bind.NewBoundContract(multiCallAddress, parsedABI_pancakeswapv3_multicall, client, client, client)
+	}
+
+	// Now you can use instance_multicall for further operations
+
 	var response []interface{}
 	getNAdjacentTickWordsInBothDirections := uint16(20)
-	err = instance_uniswapV3_multicall.Call(callOpts, &response, "getExchangePriceInputData", poolAddressConverted, getNAdjacentTickWordsInBothDirections)
+	err = instance_multicall.Call(callOpts, &response, "getExchangePriceInputData", poolAddressConverted, getNAdjacentTickWordsInBothDirections)
 	if err != nil {
 		log.Info("GetBalanceMetaData_UniswapV3: Failed to retrieve value of variable:", err)
 		return metaData, err
