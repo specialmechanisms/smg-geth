@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strings"
 	"context"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -32,6 +33,8 @@ var activeOneInchV2DecayPeriods map[common.Address]OneInchV2DecayPeriod
 var blacklistArray_OneinchV2 []string
 var blacklist_OneinchV2 map[string]bool
 var Balancerv2TestPoolIds []string
+var KnownEthereumAddresses []string
+var activeOneInchV2DecayPeriods_Lock sync.Mutex
 
 func init() {
 	var err error
@@ -91,6 +94,7 @@ func init() {
 	// Create a map for constant-time lookups
 	blacklist_OneinchV2 = make(map[string]bool)
 	Balancerv2TestPoolIds = []string{"0x32296969ef14eb0c6d29669c550d4a0449130230000200000000000000000080", "0x1e19cf2d73a72ef1332c882f20534b6519be0276000200000000000000000112", "0x1e19cf2d73a72ef1332c882f20534b6519be0276000200000000000000000112", "0x06df3b2bbb68adc8b0e302443692037ed9f91b42000000000000000000000063", "0x514f35a92a13bc7093f299af5d8ebb1387e42d6b0002000000000000000000c9", "0x27c9f71cc31464b906e0006d4fcbc8900f48f15f00020000000000000000010f", "0xa7ff759dbef9f3efdd1d59beee44b966acafe214000200000000000000000180", "0xde8c195aa41c11a0c4787372defbbddaa31306d2000200000000000000000181", "0x9137f3a026fa419a7a9a0ba8df6601d4b0abfd260002000000000000000001ab", "0xe8cc7e765647625b95f59c15848379d10b9ab4af0002000000000000000001de", "0x1bccaac02bae336c6352acc3b772059ef1142fa70002000000000000000001f0", "0xbc5f4f9332d8415aaf31180ab4661c9141cc84e4000200000000000000000262", "0x0578292cb20a443ba1cde459c985ce14ca2bdee5000100000000000000000269", "0x8eb6c82c3081bbbd45dcac5afa631aac53478b7c000100000000000000000270", "0xf506984c16737b1a9577cadeda02a49fd612aff80002000000000000000002a9", "0x99a14324cfd525a34bbc93ac7e348929909d57fd00020000000000000000030e", "0x48607651416a943bf5ac71c41be1420538e78f87000200000000000000000327", "0x8167a1117691f39e05e9131cfa88f0e3a620e96700020000000000000000038c", "0xdbc4f138528b6b893cbcc3fd9c15d8b34d0554ae0002000000000000000003bf", "0xd1ec5e215e8148d76f4460e4097fd3d5ae0a35580002000000000000000003d3", "0x5512a4bbe7b3051f92324bacf25c02b9000c4a500001000000000000000003d7", "0xe4010ef5e37dc23154680f23c4a0d48bfca91687000200000000000000000432", "0xfd1cf6fd41f229ca86ada0584c63c49c3d66bbc9000200000000000000000438"}
+	KnownEthereumAddresses = []string{"0x0000000000000000000000000000000000000000", "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"}
 }
 
 type WrongFactoryAddressError struct {
@@ -134,11 +138,13 @@ func AddPoolToActiveOneInchV2DecayPeriods(poolAddress common.Address, startBlock
 	// log.Info("endBlock", "endBlock", endBlock)
 
 	// Add or overwrite the pool in the list of active decay periods
+	activeOneInchV2DecayPeriods_Lock.Lock()
 	activeOneInchV2DecayPeriods[poolAddress] = OneInchV2DecayPeriod{
 		PoolAddress: poolAddress,
 		StartBlock:  *startBlock,
 		EndBlock:    *endBlock,
 	}
+	activeOneInchV2DecayPeriods_Lock.Unlock()
 	// log.Info("activeOneInchV2DecayPeriods", "activeOneInchV2DecayPeriods", activeOneInchV2DecayPeriods)
 }
 
@@ -196,8 +202,13 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 		tokens = append(tokens, addrSlice...)
 	}
 
-	// Fetch balance details for each token
-	for _, token := range tokens {
+	balancesForAddition := make([]*big.Int, 0)
+	balancesForRemoval := make([]*big.Int, 0)
+	for i, token := range tokens {
+		if i > 1 {
+			log.Info("Warning: More than 2 tokens detected for pool: Skipping this pool due to faulty contract.", "poolAddress", poolAddress)
+			return metaData, nil // Returning the current metaData without any further processing
+		}
 		// Get balance for addition
 		var balanceForAdditionResponse []interface{}
 		err = instance_OneInchV2_Mooniswap_Pool.Call(callOpts, &balanceForAdditionResponse, "getBalanceForAddition", token)
@@ -208,6 +219,8 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 			}
 			return metaData, err // For other errors
 		}
+		balanceForAdditionResponseBigInt := balanceForAdditionResponse[0].(*big.Int)
+		balancesForAddition = append(balancesForAddition, balanceForAdditionResponseBigInt)
 
 		// Get balance for removal
 		var balanceForRemovalResponse []interface{}
@@ -219,28 +232,27 @@ func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error
 			}
 			return metaData, err // For other errors
 		}
-
-		// converting to ether units
-		if token.Hex() == "0x0000000000000000000000000000000000000000" || token.Hex() == "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" {
-			metaData.Balance_token0_src, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForAdditionResponse[0].(*big.Int), 18)
-			if err != nil {
-				return metaData, err
-			}
-			metaData.Balance_token0_dst, err = ConvertWeiUnitsToEtherUnits_UsingDecimals(balanceForRemovalResponse[0].(*big.Int), 18)
-			if err != nil {
-				return metaData, err
-			}
-		} else {
-			metaData.Balance_token1_src, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForAdditionResponse[0].(*big.Int), token.Hex())
-			if err != nil {
-				return metaData, err
-			}
-			metaData.Balance_token1_dst, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balanceForRemovalResponse[0].(*big.Int), token.Hex())
-			if err != nil {
-				return metaData, err
-			}
-		}
+		balanceForRemovalResponseBigInt := balanceForRemovalResponse[0].(*big.Int)
+		balancesForRemoval = append(balancesForRemoval, balanceForRemovalResponseBigInt)
 	}
+
+	metaData.Balance_token0_src, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balancesForAddition[0], tokens[0].Hex())
+	if err != nil {
+		return metaData, err
+	}
+	metaData.Balance_token0_dst, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balancesForRemoval[0], tokens[0].Hex())
+	if err != nil {
+		return metaData, err
+	}
+	metaData.Balance_token1_src, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balancesForAddition[1], tokens[1].Hex())
+	if err != nil {
+		return metaData, err
+	}
+	metaData.Balance_token1_dst, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balancesForRemoval[1], tokens[1].Hex())
+	if err != nil {
+		return metaData, err
+	}
+	// log.Info(poolAddress, "metaData", metaData)
 
 	// Fetch exchange fee
 	var exchangeFeeResponse []interface{}
@@ -924,6 +936,16 @@ func ConvertWeiUnitsToEtherUnits_UsingTokenAddress(tokenAmount *big.Int, tokenAd
 		err := errors.New("tokenAmount is nil, zero, or negative")
 		fmt.Printf("Error: %v, tokenAmount: %v", err, tokenAmount)
 		return 0, err
+	}
+
+	// if tokenAddress is ether, then convert tokenAmount to ether units and return it
+	for _, knownAddress := range KnownEthereumAddresses {
+		if tokenAddress == knownAddress {
+			// convert tokenAmount that are in wei units to ether units
+			tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
+			tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, big.NewFloat(math.Pow(10.0, 18))).Float64()
+			return tokenAmount_etherUnits, nil // Return nil error on success
+		}
 	}
 
 	// Check if tokenAddress is a valid Ethereum address

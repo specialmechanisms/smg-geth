@@ -336,6 +336,18 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 					}
 				}
 
+				// // DEBUGGING START
+				// // only execute this code every 50 blocks
+				// oneInchPoolsToDebug, err := GetAllPools_OneInchV2()
+				// if err != nil {
+				// 	log.Error("NewHeads: error getting all OneInch pools: ", err)
+				// }
+				// for _, pool := range oneInchPoolsToDebug {
+				// 	poolAddress := common.HexToAddress(pool)
+				// 	AddPoolToActiveOneInchV2DecayPeriods(poolAddress, h.Number)
+				// }
+				// // DEBUGGING END
+
 				// Create channels for OneInch decaying pools and results
 				oneInchPools := GetAllDecayingOneinchPoolsData(h.Number) // Get pools that need to be queried
 				// log.Info("NewHeads: oneInchPools", "count", len(oneInchPools))
