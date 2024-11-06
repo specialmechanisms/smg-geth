@@ -633,11 +633,6 @@ web3._extend({
 			params: 2,
 		}),
 		new web3._extend.Method({
-			name: 'eth_callBundleSignedByOther',
-			call: 'eth_callBundleSignedByOther',
-			params: 2,
-		}),
-		new web3._extend.Method({
 			name: 'getBlockReceipts',
 			call: 'eth_getBlockReceipts',
 			params: 1,
