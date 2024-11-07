@@ -2395,7 +2395,7 @@ func (s *SearcherAPI) CallBundle(ctx context.Context, args CallBundleArgs) (map[
 	if state == nil || err != nil {
 		return nil, err
 	}
-	if err := args.StateOverrides.Apply(state); err != nil {
+	if err := args.StateOverrides.Apply(state, nil); err != nil {
 		return nil, err
 	}
 	blockNumber := big.NewInt(int64(args.BlockNumber))
@@ -2606,7 +2606,7 @@ func (s *SearcherAPI) CallBundleSignedByOther(ctx context.Context, args CallBund
 	if state == nil || err != nil {
 		return nil, err
 	}
-	if err := args.StateOverrides.Apply(state); err != nil {
+	if err := args.StateOverrides.Apply(state, nil); err != nil {
 		return nil, err
 	}
 	blockNumber := big.NewInt(int64(args.BlockNumber))
@@ -2906,7 +2906,7 @@ func (s *SearcherAPI) EstimateGasBundle(ctx context.Context, args EstimateGasBun
 	if state == nil || err != nil {
 		return nil, err
 	}
-	if err := args.StateOverrides.Apply(state); err != nil {
+	if err := args.StateOverrides.Apply(state, nil); err != nil {
 		return nil, err
 	}
 
@@ -2970,7 +2970,7 @@ func (s *SearcherAPI) EstimateGasBundle(ctx context.Context, args EstimateGasBun
 		// accessListState := statedb.Copy() // create a copy just in case we use it later for access list creation
 
 		// Convert tx args to msg to apply state transition
-		msg := txArgs.ToMessage(header.BaseFee)
+		msg := txArgs.ToMessage(header.BaseFee, false, false)
 
 		// Prepare the hashes
 		txContext := core.NewEVMTxContext(msg)
