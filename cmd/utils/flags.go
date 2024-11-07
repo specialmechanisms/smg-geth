@@ -973,6 +973,53 @@ var (
 	}
 )
 
+var (
+    RedisHostNameFlag = &cli.StringFlag{
+        Name:     "redis.host",
+        Usage:    "Redis Hostname to connect to (smg) shared redis",
+        Value:    filters.DefaultRedisConfig.Host,
+        Category: flags.RedisCategory,
+    }
+
+    RedisPortFlag = &cli.IntFlag{
+        Name:     "redis.port",
+        Usage:    "Redis Port to connect to (smg) shared redis",
+        Value:    filters.DefaultRedisConfig.Port,
+        Category: flags.RedisCategory,
+    }
+
+    RedisPasswordFlag = &cli.StringFlag{
+        Name:     "redis.password",
+        Usage:    "Redis Password to connect to (smg) shared redis",
+        Value:    filters.DefaultRedisConfig.Password,
+        Category: flags.RedisCategory,
+    }
+
+	RedisDBFlag = &cli.IntFlag{
+		Name:     "redis.db",
+		Usage:    "Redis DB to connect to (smg) shared redis",
+		Value:    filters.DefaultRedisConfig.DB,
+		Category: flags.RedisCategory,
+	}
+
+	OrderAggregatorServiceFlag = &cli.BoolFlag{
+		Name:     "order-aggregator-service",
+		Usage:    "Enable Order Aggregator Service",
+		Value:    false,
+		Category: flags.RedisCategory,
+	}
+)
+
+var (
+    // RedisFlags is the flag group of all Redis-related flags.
+    RedisFlags = []cli.Flag{
+        RedisHostNameFlag,
+        RedisPortFlag,
+        RedisPasswordFlag,
+		RedisDBFlag,
+		OrderAggregatorServiceFlag,
+    }
+)
 // MakeDataDir retrieves the currently requested data directory, terminating
 // if none (or the empty string) is specified. If the node is starting a testnet,
 // then a subdirectory of the specified datadir will be used.

@@ -1,13 +1,11 @@
 package filters
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"errors"
-	"math"
 	"math/big"
 	"strings"
-	"context"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -29,6 +27,8 @@ var parsedABI_OneInchV2_Mooniswap_Pool abi.ABI
 var parsedABI_Curve_V2Pool abi.ABI
 var parsedABI_Curve_V2Pool_2Tokens abi.ABI
 var parsedABI_Curve_LPToken abi.ABI
+var parsedABI_ZRXV4 abi.ABI
+var parsedABI_Tempo abi.ABI
 var activeOneInchV2DecayPeriods map[common.Address]OneInchV2DecayPeriod
 var blacklistArray_OneinchV2 []string
 var blacklist_OneinchV2 map[string]bool
@@ -84,6 +84,14 @@ func init() {
 		log.Error("Failed to parse contract ABI: %v", err)
 	}
 	parsedABI_ERC20, err = abi.JSON(strings.NewReader(ABI_ERC20))
+	if err != nil {
+		log.Error("Failed to parse contract ABI: %v", err)
+	}
+	parsedABI_ZRXV4, err = abi.JSON(strings.NewReader(ABI_ZRXV4))
+	if err != nil {
+		log.Error("Failed to parse contract ABI: %v", err)
+	}
+	parsedABI_Tempo, err = abi.JSON(strings.NewReader(ABI_Tempo))
 	if err != nil {
 		log.Error("Failed to parse contract ABI: %v", err)
 	}
@@ -178,7 +186,7 @@ func isDivisionByZeroError(err error) bool {
 	return strings.Contains(err.Error(), "SafeMath: division by zero")
 }
 
-func GetBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error) {
+func getBalanceMetaData_OneInchV2(poolAddress string) (MetaData_OneInchV2, error) {
 	var metaData MetaData_OneInchV2
 
 	instance_OneInchV2_Mooniswap_Pool := bind.NewBoundContract(common.HexToAddress(poolAddress), parsedABI_OneInchV2_Mooniswap_Pool, client, client, client)
@@ -315,7 +323,7 @@ type MetaData_BalancerV2 struct {
 	ScalingFactors []*big.Int
 }
 
-func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, common.Address, error) {
+func getBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, common.Address, error) {
 	// the event gets fired on the vault contract and not on the pool.
 	// we will get the poolAddress from the poolId and return the poolAddress the address of PoolBalanceMetaData struct outside this function can get updated
 	var metaData MetaData_BalancerV2
@@ -339,7 +347,7 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 	callOpts := &bind.CallOpts{}
 	err := instance_balancerv2_vault.Call(callOpts, &tokensAndBalances, "getPoolTokens", poolId)
 	if err != nil {
-		log.Info("GetBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
+		log.Info("getBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
 		return metaData, poolAddress, err
 	}
 	addresses := tokensAndBalances[0].([]common.Address)
@@ -351,7 +359,7 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 		balance_wei := balances[i]
 		balance_ether, err := ConvertWeiUnitsToEtherUnits_UsingTokenAddress(balance_wei, token)
 		if err != nil {
-			log.Info("GetBalanceMetaData_BalancerV2: Failed to convert balance to ether units:", "err", err)
+			log.Info("getBalanceMetaData_BalancerV2: Failed to convert balance to ether units:", "err", err)
 			return metaData, poolAddress, err
 		}
 		metaData.Balances = append(metaData.Balances, balance_ether)
@@ -361,14 +369,14 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 	var poolFee []interface{}
 	err = instance_balancerv2_weightedPool.Call(callOpts, &poolFee, "getSwapFeePercentage")
 	if err != nil {
-		log.Info("GetBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
+		log.Info("getBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
 		return metaData, poolAddress, err
 	}
 	fee_bigInt := poolFee[0].(*big.Int)
 	// divide fee_bigInt by 1e18. i just use WETH contract here because it has 18 decimals
 	metaData.Fee, err = ConvertWeiUnitsToEtherUnits_UsingTokenAddress(fee_bigInt, "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
 	if err != nil {
-		log.Info("GetBalanceMetaData_BalancerV2: Failed to convert fee to ether units:", "err", err)
+		log.Info("getBalanceMetaData_BalancerV2: Failed to convert fee to ether units:", "err", err)
 		return metaData, poolAddress, err
 	}
 
@@ -383,7 +391,7 @@ func GetBalanceMetaData_BalancerV2(poolId common.Hash) (MetaData_BalancerV2, com
 			metaData.ScalingFactors = nil // Explicitly set ScalingFactors to nil
 		} else {
 			// An unexpected error occurred.
-			log.Info("GetBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
+			log.Info("getBalanceMetaData_BalancerV2: Failed to retrieve value of variable:", "err", err)
 			return metaData, poolAddress, err
 		}
 	} else {
@@ -423,7 +431,7 @@ type ResponseStruct_UniswapV3Multicall struct {
 	Ticks        []Ticks  `json:"ticks"`
 }
 
-func GetBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3Multicall, error) {
+func getBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3Multicall, error) {
 	var metaData ResponseStruct_UniswapV3Multicall
 
 	// The response_factoryCall is a pointer to a common.Address that will store the address returned by the factory function of the UniswapV3 pool contract.
@@ -471,7 +479,7 @@ func GetBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3M
 	getNAdjacentTickWordsInBothDirections := uint16(20)
 	err = instance_multicall.Call(callOpts, &response, "getExchangePriceInputData", poolAddressConverted, getNAdjacentTickWordsInBothDirections)
 	if err != nil {
-		log.Info("GetBalanceMetaData_UniswapV3: Failed to retrieve value of variable:", err)
+		log.Info("getBalanceMetaData_UniswapV3: Failed to retrieve value of variable:", err)
 		return metaData, err
 	}
 
@@ -484,14 +492,14 @@ func GetBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3M
 	var contractResponse ContractResponse
 	bytes, err := json.Marshal(response[0])
 	if err != nil {
-		log.Info("GetBalanceMetaData_UniswapV3: failed to marshal response[0]:", err)
+		log.Info("getBalanceMetaData_UniswapV3: failed to marshal response[0]:", err)
 		return metaData, err
 	}
 
 	// Unmarshal the JSON bytes into a ContractResponse struct
 	err = json.Unmarshal(bytes, &contractResponse)
 	if err != nil {
-		log.Info("GetBalanceMetaData_UniswapV3: failed to unmarshal into ContractResponse:", err)
+		log.Info("getBalanceMetaData_UniswapV3: failed to unmarshal into ContractResponse:", err)
 		return metaData, err
 	}
 
@@ -521,7 +529,7 @@ type MetaData_CurveV2 struct {
 	D            *big.Int
 }
 
-func GetBalanceMetaData_Curve(poolAddress string) (interface{}, error) {
+func getBalanceMetaData_Curve(poolAddress string) (interface{}, error) {
 	// find out the pool type
 	poolType, err := GetPoolType_Curve(poolAddress)
 	if err != nil {
@@ -532,41 +540,41 @@ func GetBalanceMetaData_Curve(poolAddress string) (interface{}, error) {
 	case "v1":
 		return GetPoolBalancesWei_Curve(poolAddress)
 	case "v2":
-		return GetBalanceMetaData_v2_Curve(poolAddress)
+		return getBalanceMetaData_v2_Curve(poolAddress)
 	case "v2_2Tokens":
-		return GetBalanceMetaData_v2_2Tokens_Curve(poolAddress)
+		return getBalanceMetaData_v2_2Tokens_Curve(poolAddress)
 	case "metaEth":
 		return GetPoolBalancesWei_Curve(poolAddress)
 	case "metaStable":
-		return GetBalanceMetaData_metaStable_Curve(poolAddress)
+		return getBalanceMetaData_metaStable_Curve(poolAddress)
 	default:
 		return nil, fmt.Errorf("pool type not found for curve pool: %s", poolAddress)
 	}
 }
 
-func GetBalanceMetaData_v2_Curve(poolAddress string) (*MetaData_CurveV2, error) {
-    balances_wei, err := GetPoolBalancesWei_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+func getBalanceMetaData_v2_Curve(poolAddress string) (*MetaData_CurveV2, error) {
+	balances_wei, err := GetPoolBalancesWei_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    priceScales, err := GetPriceScalesV2_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+	priceScales, err := GetPriceScalesV2_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    d, err := Get_D_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+	d, err := Get_D_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    metaData := &MetaData_CurveV2{
-        Balances_wei: balances_wei,
-        PriceScales:  priceScales,
-        D:            d,
-    }
+	metaData := &MetaData_CurveV2{
+		Balances_wei: balances_wei,
+		PriceScales:  priceScales,
+		D:            d,
+	}
 
-    return metaData, nil
+	return metaData, nil
 }
 
 type MetaData_CurveV2_2Tokens struct {
@@ -575,7 +583,7 @@ type MetaData_CurveV2_2Tokens struct {
 	D            *big.Int
 }
 
-func GetBalanceMetaData_v2_2Tokens_Curve(poolAddress string) (*MetaData_CurveV2_2Tokens, error) {
+func getBalanceMetaData_v2_2Tokens_Curve(poolAddress string) (*MetaData_CurveV2_2Tokens, error) {
 	balances_wei, err := GetPoolBalancesWei_Curve(poolAddress)
 	if err != nil {
 		return nil, err
@@ -601,39 +609,39 @@ func GetBalanceMetaData_v2_2Tokens_Curve(poolAddress string) (*MetaData_CurveV2_
 }
 
 type MetaData_CurveV2_MetaStable struct {
-	Balances_MetaPool_wei	[]*big.Int
-	Balances_BasePool_wei	[]*big.Int
-	LPTokenSupply_BasePool	*big.Int
+	Balances_MetaPool_wei  []*big.Int
+	Balances_BasePool_wei  []*big.Int
+	LPTokenSupply_BasePool *big.Int
 }
 
-func GetBalanceMetaData_metaStable_Curve(poolAddress string) (*MetaData_CurveV2_MetaStable, error) {
-    basePoolAddress, err := GetBasePoolAddress_MetaStable_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+func getBalanceMetaData_metaStable_Curve(poolAddress string) (*MetaData_CurveV2_MetaStable, error) {
+	basePoolAddress, err := GetBasePoolAddress_MetaStable_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    balances_MetaPool_wei, err := GetPoolBalancesWei_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+	balances_MetaPool_wei, err := GetPoolBalancesWei_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    balances_BasePool_wei, err := GetPoolBalancesWei_Curve(basePoolAddress)
-    if err != nil {
-        return nil, err
-    }
+	balances_BasePool_wei, err := GetPoolBalancesWei_Curve(basePoolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    lpTokenSupply_BasePool, err := GetLPTokenSupply_BasePool_MetaStable_Curve(poolAddress)
-    if err != nil {
-        return nil, err
-    }
+	lpTokenSupply_BasePool, err := GetLPTokenSupply_BasePool_MetaStable_Curve(poolAddress)
+	if err != nil {
+		return nil, err
+	}
 
-    metaData := &MetaData_CurveV2_MetaStable{
-        Balances_MetaPool_wei:  balances_MetaPool_wei,
-        Balances_BasePool_wei:  balances_BasePool_wei,
-        LPTokenSupply_BasePool: lpTokenSupply_BasePool,
-    }
+	metaData := &MetaData_CurveV2_MetaStable{
+		Balances_MetaPool_wei:  balances_MetaPool_wei,
+		Balances_BasePool_wei:  balances_BasePool_wei,
+		LPTokenSupply_BasePool: lpTokenSupply_BasePool,
+	}
 
-    return metaData, nil
+	return metaData, nil
 }
 
 func GetPoolBalancesWei_Curve(poolAddress string) ([]*big.Int, error) {
@@ -680,9 +688,9 @@ func GetPriceScalesV2_Curve(poolAddress string) ([]*big.Int, error) {
 
 	callOpts := &bind.CallOpts{}
 	poolAddressConverted := common.HexToAddress(poolAddress)
-	priceScales := make([]*big.Int, len(tokens) - 1)
+	priceScales := make([]*big.Int, len(tokens)-1)
 
-	for i := 0; i < len(tokens) - 1; i++ {
+	for i := 0; i < len(tokens)-1; i++ {
 		instancePool := bind.NewBoundContract(poolAddressConverted, parsedABI_Curve_V2Pool, client, client, client)
 
 		result := []interface{}{new(*big.Int)}
@@ -793,7 +801,7 @@ func GetBasePoolAddress_MetaStable_Curve(metaPoolAddress string) (string, error)
 	if !ok {
 		return "", fmt.Errorf("basePool not found or not a map")
 	}
-	
+
 	basePoolAddress, ok := basePool["exchange"].(string)
 	if !ok {
 		return "", fmt.Errorf("exchange not found or not a string")
@@ -842,7 +850,7 @@ func GetAllPools_Curve() ([]string, error) {
 // END CURVE
 
 // TODO nick-smc i think i need to improve logging here
-func GetBalanceMetaData_UniswapV2(poolAddress string) ([]float64, error) {
+func getBalanceMetaData_UniswapV2(poolAddress string) ([]float64, error) {
 	var metaData []float64
 
 	var contractAddress common.Address = common.HexToAddress(poolAddress)
@@ -927,77 +935,3 @@ func GetBalanceMetaData_UniswapV2(poolAddress string) ([]float64, error) {
 	return metaData, nil
 }
 
-// HELPER FUNCTIONS
-// ConvertWeiUnitsToEtherUnits_UsingTokenAddress takes in tokenAmount as a big.Int and token address,
-// and returns the balance in ether units. It now also returns an error if it cannot complete the conversion.
-func ConvertWeiUnitsToEtherUnits_UsingTokenAddress(tokenAmount *big.Int, tokenAddress string) (float64, error) {
-	// Check if tokenAmount is nil, zero, or negative
-	if tokenAmount == nil || tokenAmount.Sign() <= 0 {
-		err := errors.New("tokenAmount is nil, zero, or negative")
-		fmt.Printf("Error: %v, tokenAmount: %v", err, tokenAmount)
-		return 0, err
-	}
-
-	// if tokenAddress is ether, then convert tokenAmount to ether units and return it
-	for _, knownAddress := range KnownEthereumAddresses {
-		if tokenAddress == knownAddress {
-			// convert tokenAmount that are in wei units to ether units
-			tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
-			tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, big.NewFloat(math.Pow(10.0, 18))).Float64()
-			return tokenAmount_etherUnits, nil // Return nil error on success
-		}
-	}
-
-	// Check if tokenAddress is a valid Ethereum address
-	if !common.IsHexAddress(tokenAddress) {
-		err := fmt.Errorf("invalid token address: %s", tokenAddress)
-		fmt.Printf("Error: %v, tokenAddress: %s", err, tokenAddress)
-		return 0, err
-	}
-
-	var contractAddress common.Address = common.HexToAddress(tokenAddress)
-	instance_ERC20 := bind.NewBoundContract(contractAddress, parsedABI_ERC20, client, client, client)
-
-	// Get token decimals
-	var tokenDecimals []interface{}
-	callOpts := &bind.CallOpts{}
-	err := instance_ERC20.Call(callOpts, &tokenDecimals, "decimals")
-	if err != nil {
-		fmt.Printf("Failed to retrieve token decimals: %v, tokenAddress: %s", err, tokenAddress)
-		return 0, err // Return the error to the caller
-	}
-
-	if len(tokenDecimals) == 0 {
-		err := fmt.Errorf("tokenDecimals is empty")
-		fmt.Printf("Error: %v, tokenAddress: %s", err, tokenAddress)
-		return 0, err // Return an error indicating tokenDecimals is empty
-	}
-
-	// Convert tokenAmount that are in wei units to ether units using the decimals
-	tokenDecimals_float64 := float64(tokenDecimals[0].(uint8))
-	tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
-	tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, new(big.Float).Mul(big.NewFloat(math.Pow(10.0, tokenDecimals_float64)), big.NewFloat(1))).Float64()
-
-	return tokenAmount_etherUnits, nil // Return nil error on success
-}
-
-// create a function that takes in tokemAmount as a bigInt and decimals as int and returns the balance in ether units
-func ConvertWeiUnitsToEtherUnits_UsingDecimals(tokenAmount *big.Int, decimals int) (float64, error) {
-
-	if tokenAmount == nil || tokenAmount.Sign() <= 0 {
-		return 0, errors.New("tokenAmount is nil, zero, or negative")
-	}
-
-	// Check for valid decimals value (typically, 0 <= decimals <= 18 for Ethereum tokens)
-	if decimals < 0 || decimals > 36 {
-		return 0, fmt.Errorf("invalid decimals: %d. Decimals should be between 0 and 36", decimals)
-	}
-
-
-	// convert tokenAmount that are in wei units to ether units using the decimals
-	tokenDecimals_float64 := float64(decimals)
-	tokenAmount_float64 := new(big.Float).SetInt(tokenAmount)
-	tokenAmount_etherUnits, _ := new(big.Float).Quo(tokenAmount_float64, new(big.Float).Mul(big.NewFloat(math.Pow(10.0, tokenDecimals_float64)), big.NewFloat(1))).Float64()
-
-	return tokenAmount_etherUnits, nil
-}
