@@ -420,25 +420,18 @@ func (args *TransactionArgs) CallDefaults(globalGasCap uint64, baseFee *big.Int,
 // ToMessage converts the transaction arguments to the Message type used by the
 // core evm. This method is used in calls and traces that do not require a real
 // live transaction.
-func (args *TransactionArgs) ToMessage(baseFee *big.Int) (*core.Message) {
+// Assumes that fields are not nil, i.e. setDefaults or CallDefaults has been called.
+func (args *TransactionArgs) ToMessage(baseFee *big.Int, skipNonceCheck, skipEoACheck bool) *core.Message {
 	// Reject invalid combinations of pre- and post-1559 fee styles
 	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
 		log.Error("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified")
 		return nil
-	}
-	// Set sender address or use zero address if none specified.
-	addr := args.from()
-
-	gas := uint64(math.MaxUint64 / 2)
-	if args.Gas != nil && *args.Gas > 0 {
-		gas = uint64(*args.Gas)
 	}
 
 	var (
 		gasPrice   *big.Int
 		gasFeeCap  *big.Int
 		gasTipCap  *big.Int
-		blobFeeCap *big.Int
 	)
 	if baseFee == nil {
 		// If there's no basefee, then it must be a non-1559 execution
@@ -470,43 +463,47 @@ func (args *TransactionArgs) ToMessage(baseFee *big.Int) (*core.Message) {
 			}
 		}
 	}
-	if args.BlobFeeCap != nil {
-		blobFeeCap = args.BlobFeeCap.ToInt()
-	} else if args.BlobHashes != nil {
-		blobFeeCap = new(big.Int)
-	}
-	value := new(big.Int)
-	if args.Value != nil {
-		value = args.Value.ToInt()
-	}
-	data := args.data()
 	var accessList types.AccessList
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	msg := &core.Message{
-		From:              addr,
-		To:                args.To,
-		Value:             value,
-		GasLimit:          gas,
-		GasPrice:          gasPrice,
-		GasFeeCap:         gasFeeCap,
-		GasTipCap:         gasTipCap,
-		Data:              data,
-		AccessList:        accessList,
-		BlobGasFeeCap:     blobFeeCap,
-		BlobHashes:        args.BlobHashes,
-		SkipAccountChecks: true,
+	return &core.Message{
+		From:             args.from(),
+		To:               args.To,
+		Value:            (*big.Int)(args.Value),
+		Nonce:            uint64(*args.Nonce),
+		GasLimit:         uint64(*args.Gas),
+		GasPrice:         gasPrice,
+		GasFeeCap:        gasFeeCap,
+		GasTipCap:        gasTipCap,
+		Data:             args.data(),
+		AccessList:       accessList,
+		BlobGasFeeCap:    (*big.Int)(args.BlobFeeCap),
+		BlobHashes:       args.BlobHashes,
+		SkipNonceChecks:  skipNonceCheck,
+		SkipFromEOACheck: skipEoACheck,
 	}
-	return msg
 }
 
 // ToTransaction converts the arguments to a transaction.
 // This assumes that setDefaults has been called.
-func (args *TransactionArgs) ToTransaction() *types.Transaction {
-	var data types.TxData
+func (args *TransactionArgs) ToTransaction(defaultType int) *types.Transaction {
+	usedType := types.LegacyTxType
 	switch {
-	case args.BlobHashes != nil:
+	case args.BlobHashes != nil || defaultType == types.BlobTxType:
+		usedType = types.BlobTxType
+	case args.MaxFeePerGas != nil || defaultType == types.DynamicFeeTxType:
+		usedType = types.DynamicFeeTxType
+	case args.AccessList != nil || defaultType == types.AccessListTxType:
+		usedType = types.AccessListTxType
+	}
+	// Make it possible to default to newer tx, but use legacy if gasprice is provided
+	if args.GasPrice != nil {
+		usedType = types.LegacyTxType
+	}
+	var data types.TxData
+	switch usedType {
+	case types.BlobTxType:
 		al := types.AccessList{}
 		if args.AccessList != nil {
 			al = *args.AccessList
@@ -532,7 +529,7 @@ func (args *TransactionArgs) ToTransaction() *types.Transaction {
 			}
 		}
 
-	case args.MaxFeePerGas != nil:
+	case types.DynamicFeeTxType:
 		al := types.AccessList{}
 		if args.AccessList != nil {
 			al = *args.AccessList
@@ -549,7 +546,7 @@ func (args *TransactionArgs) ToTransaction() *types.Transaction {
 			AccessList: al,
 		}
 
-	case args.AccessList != nil:
+	case types.AccessListTxType:
 		data = &types.AccessListTx{
 			To:         args.To,
 			ChainID:    (*big.Int)(args.ChainID),

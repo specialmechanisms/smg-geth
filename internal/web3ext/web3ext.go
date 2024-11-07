@@ -263,7 +263,6 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'chaindbProperty',
 			call: 'debug_chaindbProperty',
-			params: 1,
 			outputFormatter: console.log
 		}),
 		new web3._extend.Method({
@@ -631,6 +630,10 @@ web3._extend({
 			name: 'eth_callBundleSignedByOther',
 			call: 'eth_callBundleSignedByOther',
 			params: 2,
+			name: 'simulateV1',
+			call: 'eth_simulateV1',
+			params: 2,
+			inputFormatter: [null, web3._extend.formatters.inputDefaultBlockNumberFormatter],
 		}),
 		new web3._extend.Method({
 			name: 'getBlockReceipts',
