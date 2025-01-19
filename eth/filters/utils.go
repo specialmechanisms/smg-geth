@@ -142,6 +142,7 @@ func GetERC20TokenAllowance(token common.Address, owner common.Address, spender 
 	return allowance_wei, nil
 }
 
+// TODO nick - why did i implement this? is this leftover code of something that did not work?
 func getBalanceMetaData_ERC20_Transfer(tokenAddress common.Address, eventLog *Log) (MetaData_ERC20Balances, error) {
 	var result MetaData_ERC20Balances
 
@@ -182,6 +183,7 @@ func getBalanceMetaData_ERC20_Transfer(tokenAddress common.Address, eventLog *Lo
 	return result, nil
 }
 
+// TODO nick - why did i implement this? is this leftover code of something that did not work?
 func getBalanceMetaData_ERC20_Allowance(tokenAddress common.Address, eventLog *Log) (MetaData_ERC20Allowance, error) {
 	// emit Approval(msg.sender, usr, wad);
 	var result MetaData_ERC20Allowance
@@ -209,6 +211,7 @@ func getBalanceMetaData_ERC20_Allowance(tokenAddress common.Address, eventLog *L
 	return result, nil
 }
 
+// TODO nick - why did i implement this? is this leftover code of something that did not work?
 func getBalanceMetaData_ERC20(tokenAddress common.Address, eventLog *Log) (interface{}, error) {
 	// Get the balance of the token
 
