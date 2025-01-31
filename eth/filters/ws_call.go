@@ -46,7 +46,7 @@ var allCurvePools []string
 var err error
 
 func init() {
-	fmt.Println("SMG GETH v0.1.1")
+	fmt.Println("SMG GETH v0.1.2")
 	fmt.Println("NewHeads: init() called...")
 	numWorkers = runtime.NumCPU() - 1
 	if numWorkers < 1 {
