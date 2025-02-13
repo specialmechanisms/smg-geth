@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-
 // TODO nick - we should want to move this to a separate file
 // we need a notice for the NewHeads method or we let it here?
 type PoolBalanceMetaData struct {
@@ -37,6 +36,9 @@ var exchangeName_BalancerV2 string
 var exchangeName_OneInchV2 string
 var mapOfExchangeNameToTopics = make(map[string][]common.Hash)
 
+var topic_erc20Transfer string
+var topic_erc20Allowance string
+
 // TODO nick give this a better name
 var flattenedValues []common.Hash
 var numWorkers int
@@ -44,7 +46,7 @@ var allCurvePools []string
 var err error
 
 func init() {
-	fmt.Println("SMG GETH v0.1")
+	fmt.Println("SMG GETH v0.1.2")
 	fmt.Println("NewHeads: init() called...")
 	numWorkers = runtime.NumCPU() - 1
 	if numWorkers < 1 {
@@ -87,7 +89,7 @@ func init() {
 	} else {
 		fmt.Println("nickdebug NewHeads: allCurvePools", allCurvePools)
 	}
-
+	go startOrderBookAggregatorService()
 }
 
 type MyWaitGroup struct {
@@ -126,7 +128,7 @@ func curveWorker(id int, pools <-chan string, results chan<- PoolBalanceMetaData
 	for pool := range pools {
 		// log.Info("curveWorker count (start)", "count", curveWg.Count(), "pool", pool)
 		// Fetch balance metadata for the Curve pool
-		balanceMetaData, err := GetBalanceMetaData_Curve(pool)
+		balanceMetaData, err := getBalanceMetaData_Curve(pool)
 		if err != nil {
 			// Handle error, perhaps log it
 			fmt.Printf("Worker %d: Error fetching balance metadata for Curve pool %s: %v\n", id, pool, err)
@@ -172,20 +174,20 @@ func logWorker(id int, logs <-chan *Log, results chan<- PoolBalanceMetaData, log
 		switch topicExchangeName {
 		case exchangeName_UniswapV2:
 			// log.Info("found UniswapV2 log...", "pool", address.Hex())
-			balanceMetaData, err = GetBalanceMetaData_UniswapV2(address.Hex())
+			balanceMetaData, err = getBalanceMetaData_UniswapV2(address.Hex())
 			// log.Info("finished UniswapV2 log", "pool", address.Hex())
 		case exchangeName_UniswapV3:
 			// log.Info("found UniswapV3 log...", "pool", address.Hex())
-			balanceMetaData, err = GetBalanceMetaData_UniswapV3(address.Hex())
+			balanceMetaData, err = getBalanceMetaData_UniswapV3(address.Hex())
 			// log.Info("finished UniswapV3 log", "pool", address.Hex())
 		case exchangeName_BalancerV2:
 			poolId := eventLog.Topics[1]
 			// log.Info("found BalancerV2 log...", "poolId", poolId.Hex())
-			balanceMetaData, address, err = GetBalanceMetaData_BalancerV2(poolId)
+			balanceMetaData, address, err = getBalanceMetaData_BalancerV2(poolId)
 			// log.Info("finished BalancerV2 log", "poolId", poolId.Hex())
 		case exchangeName_OneInchV2:
 			// log.Info("found OneInchV2 log...", "address", address.Hex())
-			balanceMetaData, err = GetBalanceMetaData_OneInchV2(address.Hex())
+			balanceMetaData, err = getBalanceMetaData_OneInchV2(address.Hex())
 			AddPoolToActiveOneInchV2DecayPeriods(address, currentBlockNumber)
 			// log.Info("finished OneInchV2 log", "address", address.Hex())
 		default:
@@ -220,7 +222,7 @@ func oneInchWorker(id int, pools <-chan common.Address, results chan<- PoolBalan
 		balanceMetaData := interface{}(nil)
 		// Process the pool
 		// Example: Fetching pool data (placeholder logic)
-		balanceMetaData, err = GetBalanceMetaData_OneInchV2(poolAddress.Hex())
+		balanceMetaData, err = getBalanceMetaData_OneInchV2(poolAddress.Hex())
 		if err != nil {
 			log.Error("NewHeads: error getting balanceMetaData on OneinchV2: ", "address:", poolAddress.Hex(), "error", err)
 		}

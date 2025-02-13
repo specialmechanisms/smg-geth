@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -34,8 +35,8 @@ import (
 
 // UDPConn is a network connection on which discovery can operate.
 type UDPConn interface {
-	ReadFromUDP(b []byte) (n int, addr *net.UDPAddr, err error)
-	WriteToUDP(b []byte, addr *net.UDPAddr) (n int, err error)
+	ReadFromUDPAddrPort(b []byte) (n int, addr netip.AddrPort, err error)
+	WriteToUDPAddrPort(b []byte, addr netip.AddrPort) (n int, err error)
 	Close() error
 	LocalAddr() net.Addr
 }
@@ -52,9 +53,10 @@ type Config struct {
 	Unhandled   chan<- ReadPacket // unhandled packets are sent on this channel
 
 	// Node table configuration:
-	Bootnodes       []*enode.Node // list of bootstrap nodes
-	PingInterval    time.Duration // speed of node liveness check
-	RefreshInterval time.Duration // used in bucket refresh
+	Bootnodes               []*enode.Node // list of bootstrap nodes
+	PingInterval            time.Duration // speed of node liveness check
+	RefreshInterval         time.Duration // used in bucket refresh
+	NoFindnodeLivenessCheck bool          // turns off validation of table nodes in FINDNODE handler
 
 	// The options below are useful in very specific cases, like in unit tests.
 	V5ProtocolID *[6]byte
@@ -94,7 +96,7 @@ func ListenUDP(c UDPConn, ln *enode.LocalNode, cfg Config) (*UDPv4, error) {
 // channel if configured.
 type ReadPacket struct {
 	Data []byte
-	Addr *net.UDPAddr
+	Addr netip.AddrPort
 }
 
 type randomSource interface {
