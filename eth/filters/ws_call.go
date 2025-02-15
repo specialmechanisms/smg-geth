@@ -170,6 +170,8 @@ func logWorker(id int, logs <-chan *Log, results chan<- PoolBalanceMetaData, log
 		}
 		if isPoolProcessing == true {
 			// log.Info("logworker found pool in processing...", "pool", address.Hex())
+			// send back empty results, else it will timeout and cost performance
+			results <- PoolBalanceMetaData{}
 			logWg.Done()
 			continue
 		}
