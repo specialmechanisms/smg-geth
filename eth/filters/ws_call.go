@@ -45,6 +45,9 @@ var numWorkers int
 var allCurvePools []string
 var err error
 
+// var poolsInProcessing sync.Map
+var poolsInProcessing = &sync.Map{}
+
 func init() {
 	fmt.Println("SMG GETH v0.1.2")
 	fmt.Println("NewHeads: init() called...")
@@ -158,6 +161,20 @@ func logWorker(id int, logs <-chan *Log, results chan<- PoolBalanceMetaData, log
 		// log.Info("logWorker count (start)", "count", logWg.Count())
 
 		address := eventLog.Address
+		// Check if pool is already being processed and skip processing if it is.
+		poolsInProcessing.LoadOrStore(eventLog.Address, false)
+		isPoolProcessing, ok := poolsInProcessing.Load(eventLog.Address)
+		if !ok {
+			// log.Error("logworker failed to load pool in processing...", "pool", address.Hex(), "error", err)
+			isPoolProcessing = false
+		}
+		if isPoolProcessing == true {
+			// log.Info("logworker found pool in processing...", "pool", address.Hex())
+			// send back empty results, else it will timeout and cost performance
+			results <- PoolBalanceMetaData{}
+			logWg.Done()
+			continue
+		}
 		eventLogTopic := eventLog.Topics[0]
 		balanceMetaData := interface{}(nil)
 		var topicExchangeName string
@@ -168,6 +185,10 @@ func logWorker(id int, logs <-chan *Log, results chan<- PoolBalanceMetaData, log
 					break
 				}
 			}
+		}
+		if topicExchangeName != "" {
+			// Mark the pool as being processed
+			poolsInProcessing.Store(eventLog.Address, true)
 		}
 
 		var err error
@@ -388,14 +409,13 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 				close(logChan)
 				close(curvePoolsChan)
-				// Wait for OneInch workers to finish and then close the channels
 				close(oneInchPoolsChan)
 				// log.Info("NewHeads: all channels closed")
 
 				notifier.Notify(rpcSub.ID, newHeadsWithPoolBalanceMetaData)
 				// get the timestamp of the block
 				log.Info("NewHeads: time to process logs and notify", "duration", time.Since(start))
-
+				poolsInProcessing = &sync.Map{}
 			}
 		}
 	}()
