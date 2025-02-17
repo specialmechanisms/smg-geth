@@ -227,33 +227,6 @@ func (api *FilterAPI) NewBlockFilter() rpc.ID {
 	return headerSub.ID
 }
 
-// NewHeads send a notification each time a new (header) block is appended to the chain.
-func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
-	notifier, supported := rpc.NotifierFromContext(ctx)
-	if !supported {
-		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
-	}
-
-	rpcSub := notifier.CreateSubscription()
-
-	go func() {
-		headers := make(chan *types.Header)
-		headersSub := api.events.SubscribeNewHeads(headers)
-		defer headersSub.Unsubscribe()
-
-		for {
-			select {
-			case h := <-headers:
-				notifier.Notify(rpcSub.ID, h)
-			case <-rpcSub.Err():
-				return
-			}
-		}
-	}()
-
-	return rpcSub, nil
-}
-
 // Logs creates a subscription that fires for all new log that match the given filter criteria.
 func (api *FilterAPI) Logs(ctx context.Context, crit FilterCriteria) (*rpc.Subscription, error) {
 	notifier, supported := rpc.NotifierFromContext(ctx)

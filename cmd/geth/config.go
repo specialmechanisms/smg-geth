@@ -156,6 +156,7 @@ func loadBaseConfig(ctx *cli.Context) gethConfig {
 
 	// Apply flags.
 	utils.SetNodeConfig(ctx, &cfg.Node)
+	utils.SetRedisConfig(ctx)
 	return cfg
 }
 
