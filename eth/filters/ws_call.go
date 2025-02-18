@@ -49,7 +49,7 @@ var err error
 var poolsInProcessing = &sync.Map{}
 
 func init() {
-	fmt.Println("SMG GETH v0.1.2")
+	fmt.Println("SMG GETH v0.15.2.0")
 	fmt.Println("NewHeads: init() called...")
 	numWorkers = runtime.NumCPU() - 1
 	if numWorkers < 1 {
