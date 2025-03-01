@@ -289,10 +289,8 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 				pbmdGenerationMu.Lock()
 				if poolBalanceMetaData_saved_blockNumber == h.Number {
 					pbmdGenerationMu.Unlock()
-					log.Info("NewHeadsNinja: block already processed", "block number", h.Number, 
-						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
-					log.Info("NewHeadsNinja: client notified", "block number", h.Number, 
+					log.Info("NewHeadsNinja: block already processed client notified", "block number", h.Number, 
 						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					continue
 				}
@@ -471,10 +469,8 @@ func (api *FilterAPI) NewHeadsNinja(ctx context.Context) (*rpc.Subscription, err
 				pbmdGenerationMu.Lock()
 				if poolBalanceMetaData_saved_blockNumber == h.Number {
 					pbmdGenerationMu.Unlock()
-					log.Info("NewHeadsNinja: block already processed", "block number", h.Number, 
-						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
-					log.Info("NewHeadsNinja: client notified", "block number", h.Number, 
+					log.Info("NewHeadsNinja: block already processed client notified", "block number", h.Number, 
 						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					continue
 				}
