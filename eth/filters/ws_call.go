@@ -288,14 +288,18 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 				pbmdGenerationMu.Lock()
 				if poolBalanceMetaData_saved_blockNumber == h.Number {
-					log.Info("NewHeadsNinja: block already processed", "block number", h.Number)
 					pbmdGenerationMu.Unlock()
+					log.Info("NewHeadsNinja: block already processed", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
+					log.Info("NewHeadsNinja: client notified", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					continue
 				}
 				// measure the time since h.Time
 				hTime := time.Unix(int64(h.Time), 0)
-				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime))
+				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime), 
+					"rpcSub.ID", rpcSub.ID)
 
 				// log.Info("NewHeadsNinja: new block found", "block number", h.Number)
 				blockHash := h.Hash()
@@ -466,15 +470,18 @@ func (api *FilterAPI) NewHeadsNinja(ctx context.Context) (*rpc.Subscription, err
 
 				pbmdGenerationMu.Lock()
 				if poolBalanceMetaData_saved_blockNumber == h.Number {
-					log.Info("NewHeadsNinja: block already processed", "block number", h.Number)
 					pbmdGenerationMu.Unlock()
+					log.Info("NewHeadsNinja: block already processed", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
+					log.Info("NewHeadsNinja: client notified", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
 					continue
 				}
-
 				// measure the time since h.Time
 				hTime := time.Unix(int64(h.Time), 0)
-				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime))
+				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime), 
+					"rpcSub.ID", rpcSub.ID)
 
 				// log.Info("NewHeadsNinja: new block found", "block number", h.Number)
 				blockHash := h.Hash()
@@ -619,3 +626,4 @@ func (api *FilterAPI) NewHeadsNinja(ctx context.Context) (*rpc.Subscription, err
 
 	return rpcSub, nil
 }
+
