@@ -48,6 +48,10 @@ var err error
 // var poolsInProcessing sync.Map
 var poolsInProcessing = &sync.Map{}
 
+var pbmdGenerationMu = &sync.Mutex{}
+var poolBalanceMetaData_saved = NewHeadsWithPoolBalanceMetaData{}
+var poolBalanceMetaData_saved_blockNumber = &big.Int{}
+
 func init() {
 	fmt.Println("SMG GETH v0.15.2.0")
 	fmt.Println("NewHeads: init() called...")
@@ -281,11 +285,21 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 			select {
 			case h := <-headers:
 				start := time.Now()
+
+				pbmdGenerationMu.Lock()
+				if poolBalanceMetaData_saved_blockNumber == h.Number {
+					pbmdGenerationMu.Unlock()
+					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
+					log.Info("NewHeadsNinja: block already processed client notified", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
+					continue
+				}
 				// measure the time since h.Time
 				hTime := time.Unix(int64(h.Time), 0)
-				log.Info("NewHeads: block discovered", "block number", h.Number, "duration", time.Since(hTime))
+				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime), 
+					"rpcSub.ID", rpcSub.ID)
 
-				// log.Info("NewHeads: new block found", "block number", h.Number)
+				// log.Info("NewHeadsNinja: new block found", "block number", h.Number)
 				blockHash := h.Hash()
 
 				filterCriteria := FilterCriteria{
@@ -298,16 +312,17 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 				logs, err := api.GetLogs(ctx, filterCriteria)
 				// print the len of logs TODO nick remove this again
-				// log.Info("NewHeads: len(logs)", "count", len(logs))
+				// log.Info("NewHeadsNinja: len(logs)", "count", len(logs))
 				if err != nil {
-					log.Error("NewHeads: error getting logs: ", err)
+					log.Error("NewHeadsNinja: error getting logs: ", err)
+					pbmdGenerationMu.Unlock()
 					continue
 				}
 
 				// Create channels for logs and results
 				logChan := make(chan *types.Log, len(logs))          // Channel to send logs to logWorkers
 				results := make(chan PoolBalanceMetaData, len(logs)) // Channel to collect results
-				// log.Info("NewHeads: logChan and results built")
+				// log.Info("NewHeadsNinja: logChan and results built")
 				// Start logWorkers
 				logWg.Add(len(logs))
 				for w := 1; w <= numWorkers; w++ {
@@ -337,7 +352,7 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 				// Create channels for Curve pools and results
 				curvePoolsChan := make(chan string, len(allCurvePools))            // Channel to send Curve pools to curveWorkers
 				curveResults := make(chan PoolBalanceMetaData, len(allCurvePools)) // Channel to collect results from curveWorkers
-				// log.Info("NewHeads: curvePoolsChan and curveResults built")
+				// log.Info("NewHeadsNinja: curvePoolsChan and curveResults built")
 
 				// Start Curve workers
 				curveWg.Add(len(allCurvePools))
@@ -363,7 +378,7 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 				// // only execute this code every 50 blocks
 				// oneInchPoolsToDebug, err := GetAllPools_OneInchV2()
 				// if err != nil {
-				// 	log.Error("NewHeads: error getting all OneInch pools: ", err)
+				// 	log.Error("NewHeadsNinja: error getting all OneInch pools: ", err)
 				// }
 				// for _, pool := range oneInchPoolsToDebug {
 				// 	poolAddress := common.HexToAddress(pool)
@@ -373,7 +388,7 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 				// Create channels for OneInch decaying pools and results
 				oneInchPools := GetAllDecayingOneinchPoolsData(h.Number) // Get pools that need to be queried
-				// log.Info("NewHeads: oneInchPools", "count", len(oneInchPools))
+				// log.Info("NewHeadsNinja: oneInchPools", "count", len(oneInchPools))
 				oneInchPoolsChan := make(chan common.Address, len(oneInchPools))    // Channel to send OneInch pools to workers
 				oneInchResults := make(chan PoolBalanceMetaData, len(oneInchPools)) // Channel to collect results from OneInch workers)
 
@@ -400,21 +415,26 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 				}
 
 				// Wait for all workers to finish and then close the channels
-				// log.Info("NewHeads: waiting for log workers to finish...", "logWg.Count()", logWg.Count())
+				// log.Info("NewHeadsNinja: waiting for log workers to finish...", "logWg.Count()", logWg.Count())
 				logWg.Wait()
-				// log.Info("NewHeads: waiting for curve workers to finish...", "curveWg.Count()", curveWg.Count())
+				// log.Info("NewHeadsNinja: waiting for curve workers to finish...", "curveWg.Count()", curveWg.Count())
 				curveWg.Wait()
-				// log.Info("NewHeads: waiting for oneInch workers to finish...", "oneInchWg.Count()", oneInchWg.Count())
+				// log.Info("NewHeadsNinja: waiting for oneInch workers to finish...", "oneInchWg.Count()", oneInchWg.Count())
 				oneInchWg.Wait()
 
 				close(logChan)
 				close(curvePoolsChan)
 				close(oneInchPoolsChan)
-				// log.Info("NewHeads: all channels closed")
+				// log.Info("NewHeadsNinja: all channels closed")
+
+				poolBalanceMetaData_saved = newHeadsWithPoolBalanceMetaData
+				poolBalanceMetaData_saved_blockNumber = h.Number
+				pbmdGenerationMu.Unlock()
 
 				notifier.Notify(rpcSub.ID, newHeadsWithPoolBalanceMetaData)
 				// get the timestamp of the block
-				log.Info("NewHeads: time to process logs and notify", "duration", time.Since(start))
+				log.Info("NewHeadsNinja: time to process logs and notify", "duration", time.Since(start), 
+					"rpcSub.ID", rpcSub.ID)
 				poolsInProcessing = &sync.Map{}
 			}
 		}
@@ -422,3 +442,184 @@ func (api *FilterAPI) NewHeads(ctx context.Context) (*rpc.Subscription, error) {
 
 	return rpcSub, nil
 }
+
+
+
+// NewHeads send a notification each time a new (header) block is appended to the chain.
+func (api *FilterAPI) NewHeadsNinja(ctx context.Context) (*rpc.Subscription, error) {
+	notifier, supported := rpc.NotifierFromContext(ctx)
+	if !supported {
+		return &rpc.Subscription{}, rpc.ErrNotificationsUnsupported
+	}
+
+	rpcSub := notifier.CreateSubscription()
+
+	go func() {
+		// var logWg, curveWg sync.WaitGroup
+		var logWg, curveWg MyWaitGroup
+		headers := make(chan *types.Header)
+		headersSub := api.events.SubscribeNewHeads(headers)
+		defer headersSub.Unsubscribe()
+
+		for {
+			select {
+			case h := <-headers:
+				start := time.Now()
+
+				pbmdGenerationMu.Lock()
+				if poolBalanceMetaData_saved_blockNumber == h.Number {
+					pbmdGenerationMu.Unlock()
+					notifier.Notify(rpcSub.ID, poolBalanceMetaData_saved)
+					log.Info("NewHeadsNinja: block already processed client notified", "block number", h.Number, 
+						"duration", time.Since(start), "rpcSub.ID", rpcSub.ID)
+					continue
+				}
+				// measure the time since h.Time
+				hTime := time.Unix(int64(h.Time), 0)
+				log.Info("NewHeadsNinja: block discovered", "block number", h.Number, "duration", time.Since(hTime), 
+					"rpcSub.ID", rpcSub.ID)
+
+				// log.Info("NewHeadsNinja: new block found", "block number", h.Number)
+				blockHash := h.Hash()
+
+				filterCriteria := FilterCriteria{
+					BlockHash: &blockHash,
+					FromBlock: nil,
+					ToBlock:   nil,
+					Addresses: nil,
+					Topics:    [][]common.Hash{flattenedValues},
+				}
+
+				logs, err := api.GetLogs(ctx, filterCriteria)
+				// print the len of logs TODO nick remove this again
+				// log.Info("NewHeadsNinja: len(logs)", "count", len(logs))
+				if err != nil {
+					log.Error("NewHeadsNinja: error getting logs: ", err)
+					pbmdGenerationMu.Unlock()
+					continue
+				}
+
+				// Create channels for logs and results
+				logChan := make(chan *types.Log, len(logs))          // Channel to send logs to logWorkers
+				results := make(chan PoolBalanceMetaData, len(logs)) // Channel to collect results
+				// log.Info("NewHeadsNinja: logChan and results built")
+				// Start logWorkers
+				logWg.Add(len(logs))
+				for w := 1; w <= numWorkers; w++ {
+					go func(id int) {
+						logWorker(id, logChan, results, &logWg, h.Number)
+					}(w)
+				}
+				// Send logs to the logChan channel
+				for _, log := range logs {
+					logChan <- log
+				}
+
+				// Collect results from logWorkers
+				newHeadsWithPoolBalanceMetaData := NewHeadsWithPoolBalanceMetaData{
+					Header:              h,
+					PoolBalanceMetaData: make(map[common.Address]PoolBalanceMetaData),
+				}
+				for i := 0; i < len(logs); i++ {
+					select {
+					case result := <-results:
+						newHeadsWithPoolBalanceMetaData.PoolBalanceMetaData[result.Address] = result
+					case <-time.After(200 * time.Millisecond):
+						log.Error("Timeout waiting for result from logWorker")
+					}
+				}
+
+				// Create channels for Curve pools and results
+				curvePoolsChan := make(chan string, len(allCurvePools))            // Channel to send Curve pools to curveWorkers
+				curveResults := make(chan PoolBalanceMetaData, len(allCurvePools)) // Channel to collect results from curveWorkers
+				// log.Info("NewHeadsNinja: curvePoolsChan and curveResults built")
+
+				// Start Curve workers
+				curveWg.Add(len(allCurvePools))
+				for w := 1; w <= numWorkers; w++ {
+					go func(id int) {
+						curveWorker(id, curvePoolsChan, curveResults, &curveWg)
+					}(w)
+				}
+				// Populate the curvePoolsChan with the global list of all Curve pools
+				for _, pool := range allCurvePools {
+					curvePoolsChan <- pool
+				}
+				for i := 0; i < len(allCurvePools); i++ {
+					select {
+					case result := <-curveResults:
+						newHeadsWithPoolBalanceMetaData.PoolBalanceMetaData[result.Address] = result
+					case <-time.After(200 * time.Millisecond): // 200 millisecond timeout
+						log.Error("Timeout waiting for result from curveWorker")
+					}
+				}
+
+				// // DEBUGGING START
+				// // only execute this code every 50 blocks
+				// oneInchPoolsToDebug, err := GetAllPools_OneInchV2()
+				// if err != nil {
+				// 	log.Error("NewHeadsNinja: error getting all OneInch pools: ", err)
+				// }
+				// for _, pool := range oneInchPoolsToDebug {
+				// 	poolAddress := common.HexToAddress(pool)
+				// 	AddPoolToActiveOneInchV2DecayPeriods(poolAddress, h.Number)
+				// }
+				// // DEBUGGING END
+
+				// Create channels for OneInch decaying pools and results
+				oneInchPools := GetAllDecayingOneinchPoolsData(h.Number) // Get pools that need to be queried
+				// log.Info("NewHeadsNinja: oneInchPools", "count", len(oneInchPools))
+				oneInchPoolsChan := make(chan common.Address, len(oneInchPools))    // Channel to send OneInch pools to workers
+				oneInchResults := make(chan PoolBalanceMetaData, len(oneInchPools)) // Channel to collect results from OneInch workers)
+
+				// Start OneInch workers
+				var oneInchWg MyWaitGroup
+				oneInchWg.Add(len(oneInchPools))
+				for w := 1; w <= numWorkers; w++ { // numOneInchWorkers is the number of worker goroutines you want to start
+					go oneInchWorker(w, oneInchPoolsChan, oneInchResults, &oneInchWg)
+				}
+
+				// Populate the oneInchPoolsChan with pools
+				for _, pool := range oneInchPools {
+					oneInchPoolsChan <- pool.PoolAddress
+				}
+
+				// Collect results from OneInch workers
+				for i := 0; i < len(oneInchPools); i++ {
+					select {
+					case result := <-oneInchResults:
+						newHeadsWithPoolBalanceMetaData.PoolBalanceMetaData[result.Address] = result
+					case <-time.After(200 * time.Millisecond): // Timeout waiting for worker
+						log.Error("Timeout waiting for result from oneInchWorker")
+					}
+				}
+
+				// Wait for all workers to finish and then close the channels
+				// log.Info("NewHeadsNinja: waiting for log workers to finish...", "logWg.Count()", logWg.Count())
+				logWg.Wait()
+				// log.Info("NewHeadsNinja: waiting for curve workers to finish...", "curveWg.Count()", curveWg.Count())
+				curveWg.Wait()
+				// log.Info("NewHeadsNinja: waiting for oneInch workers to finish...", "oneInchWg.Count()", oneInchWg.Count())
+				oneInchWg.Wait()
+
+				close(logChan)
+				close(curvePoolsChan)
+				close(oneInchPoolsChan)
+				// log.Info("NewHeadsNinja: all channels closed")
+
+				poolBalanceMetaData_saved = newHeadsWithPoolBalanceMetaData
+				poolBalanceMetaData_saved_blockNumber = h.Number
+				pbmdGenerationMu.Unlock()
+
+				notifier.Notify(rpcSub.ID, newHeadsWithPoolBalanceMetaData)
+				// get the timestamp of the block
+				log.Info("NewHeadsNinja: time to process logs and notify", "duration", time.Since(start), 
+					"rpcSub.ID", rpcSub.ID)
+				poolsInProcessing = &sync.Map{}
+			}
+		}
+	}()
+
+	return rpcSub, nil
+}
+
