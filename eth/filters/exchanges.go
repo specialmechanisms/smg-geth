@@ -476,7 +476,7 @@ func getBalanceMetaData_UniswapV3(poolAddress string) (ResponseStruct_UniswapV3M
 	// Now you can use instance_multicall for further operations
 
 	var response []interface{}
-	getNAdjacentTickWordsInBothDirections := uint16(20)
+	getNAdjacentTickWordsInBothDirections := uint16(50)
 	err = instance_multicall.Call(callOpts, &response, "getExchangePriceInputData", poolAddressConverted, getNAdjacentTickWordsInBothDirections)
 	if err != nil {
 		log.Info("getBalanceMetaData_UniswapV3: Failed to retrieve value of variable:", err)
