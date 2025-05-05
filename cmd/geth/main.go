@@ -157,7 +157,7 @@ var (
 		utils.BeaconGenesisTimeFlag,
 		utils.BeaconCheckpointFlag,
 		utils.BeaconCheckpointFileFlag,
-	}, utils.NetworkFlags, utils.DatabaseFlags)
+	}, utils.NetworkFlags, utils.DatabaseFlags, utils.RedisFlags)
 
 	rpcFlags = []cli.Flag{
 		utils.HTTPEnabledFlag,
