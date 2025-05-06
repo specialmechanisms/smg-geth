@@ -53,7 +53,7 @@ var poolBalanceMetaData_saved = NewHeadsWithPoolBalanceMetaData{}
 var poolBalanceMetaData_saved_blockNumber = &big.Int{}
 
 func init() {
-	fmt.Println("SMG GETH v0.15.11.0")
+	fmt.Println("SMG GETH v1.15.11.0")
 	fmt.Println("NewHeads: init() called...")
 	numWorkers = runtime.NumCPU() - 1
 	if numWorkers < 1 {
